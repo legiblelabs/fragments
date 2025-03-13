@@ -1,6 +1,5 @@
 "use client"
 
-import { RepoBanner } from './repo-banner'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,
@@ -181,7 +180,6 @@ export function ChatInput({
         </div>
       )}
       <div className="relative">
-        <RepoBanner className="absolute bottom-full inset-x-2 translate-y-1 z-0 pb-2" />
         <div className={`shadow-md rounded-2xl relative z-10 bg-background border ${
           dragActive 
             ? 'before:absolute before:inset-0 before:rounded-2xl before:border-2 before:border-dashed before:border-primary' 
@@ -276,9 +274,13 @@ export function ChatInput({
         </div>
       </div>
       <p className="text-xs text-muted-foreground mt-2 text-center">
-        Fragments is an open-source project made by{' '}
-        <a href="https://e2b.dev" target="_blank" className="text-[#ff8800]">
-          ✶ E2B
+        LearnWeb.ai is demo project made by{' '}
+        <a href="https://brob.town" target="_blank" className="text-[#ff8800]">
+          bill
+        </a>
+        {' '} and {' '}
+        <a href="https://www.dayroselane.com/" target="_blank" className="text-[#ff8800]">
+          day
         </a>
       </p>
     </form>

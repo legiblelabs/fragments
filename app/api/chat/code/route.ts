@@ -83,6 +83,8 @@ Now, I need to generate the code implementation. The code should:
 2. Be fully executable and error-free
 3. Implement all features mentioned in the metadata
 4. Only include code, no comments about what the code does
+
+REMEMBER: ONLY RESPOND WITH CODE!!! NOTHING ELSE. Do NOT wrap the code in quotes.
 `;
 
     // Add metadata as context in a new message

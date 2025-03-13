@@ -1,3 +1,6 @@
+// Update the declarations for currentTab and setCurrentTab
+// Add state for showing the assignment
+
 'use client'
 
 import { AuthDialog } from '@/components/auth-dialog'
@@ -50,7 +53,8 @@ export default function Home() {
   const [result, setResult] = useState<ExecutionResult>()
   const [messages, setMessages] = useState<Message[]>([])
   const [fragment, setFragment] = useState<DeepPartial<FragmentSchema>>()
-  const [currentTab, setCurrentTab] = useState<'code' | 'fragment'>('code')
+  const [currentTab, setCurrentTab] = useState<'code' | 'fragment' | 'assignment'>('code')
+  const [showAssignment, setShowAssignment] = useState(false)
   const [isPreviewLoading, setIsPreviewLoading] = useState(false)
   const [isAuthDialogOpen, setAuthDialog] = useState(false)
   const [authView, setAuthView] = useState<AuthViewType>('sign_in')
@@ -69,6 +73,9 @@ export default function Home() {
 
   const { metadata, code, submit, isLoadingMetadata, isLoadingCode, error } = useSplitFragment()
   const isLoading = isLoadingMetadata || isLoadingCode
+
+  // Show assignment iframe in the center of the page when no messages
+  const showCenteredAssignment = messages.length === 0
 
   useEffect(() => {
     if (error?.message?.includes('request limit')) {
@@ -209,6 +216,13 @@ export default function Home() {
       return
     }
 
+    // When submitting the first message, show the assignment tab in the sidebar
+    if (messages.length === 0) {
+      setShowAssignment(true)
+      // Make sure we're no longer showing the centered assignment
+      // The tab will now be in the sidebar
+    }
+
     const content: (MessageText | MessageImage)[] = [{ type: 'text', text: chatInput }]
     const images = await toMessageImage(files)
 
@@ -304,6 +318,12 @@ export default function Home() {
     posthog.capture(`${target}_click`)
   }
 
+  function stop() {
+    // If you have a way to cancel fragment generation, call it here
+    // For example: cancelFragmentGeneration()
+    console.log('Stopping generation')
+  }
+
   function handleClearChat() {
     stop()
     setChatInput('')
@@ -314,6 +334,7 @@ export default function Home() {
     setCurrentTab('code')
     setIsPreviewLoading(false)
     isCodeComplete.current = false
+    setShowAssignment(false)
   }
 
   function setCurrentPreview(preview: {
@@ -330,6 +351,12 @@ export default function Home() {
     isCodeComplete.current = false
   }
 
+  // Function to show the Assignment tab
+  function showAssignmentTab() {
+    setShowAssignment(true)
+    setCurrentTab('assignment')
+  }
+
   return (
     <main className="flex min-h-screen max-h-screen">
       {supabase && (
@@ -342,7 +369,7 @@ export default function Home() {
       )}
       <div className="grid w-full md:grid-cols-2">
         <div
-          className={`flex flex-col w-full max-h-full max-w-[800px] mx-auto px-4 overflow-auto ${fragment ? 'col-span-1' : 'col-span-2'}`}
+          className={`flex flex-col w-full max-h-full max-w-[800px] mx-auto px-4 overflow-auto ${(fragment || showAssignment) ? 'col-span-1' : 'col-span-2'}`}
         >
           <NavBar
             session={session}
@@ -354,11 +381,28 @@ export default function Home() {
             canUndo={messages.length > 1 && !isLoading}
             onUndo={handleUndo}
           />
+          
+          {/* Always show Chat and ChatInput */}
           <Chat
             messages={messages}
             isLoading={isLoading}
             setCurrentPreview={setCurrentPreview}
           />
+          
+          {/* Display a centered iframe when no chat messages */}
+          {showCenteredAssignment && (
+            <div className="flex-grow my-6">
+              <div className="w-full h-[50vh] border rounded-lg overflow-hidden">
+                <iframe 
+                  src="/assignments" 
+                  className="w-full h-full border-0"
+                  title="Assignment"
+                  sandbox="allow-same-origin allow-scripts allow-forms"
+                />
+              </div>
+            </div>
+          )}
+          
           <ChatInput
             retry={retry}
             isErrored={error !== undefined}
@@ -387,6 +431,7 @@ export default function Home() {
             />
           </ChatInput>
         </div>
+        
         <Preview
           apiKey={apiKey}
           selectedTab={currentTab}
@@ -395,8 +440,12 @@ export default function Home() {
           isPreviewLoading={isPreviewLoading}
           fragment={fragment}
           result={result as ExecutionResult}
-          onClose={() => setFragment(undefined)}
+          onClose={() => {
+            setFragment(undefined);
+            setShowAssignment(false);
+          }}
           isCodeComplete={!isLoadingCode && !!code}
+          showAssignment={showAssignment}
         />
       </div>
     </main>

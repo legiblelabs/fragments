@@ -13,7 +13,7 @@ import { FragmentSchema } from '@/lib/schema'
 import { ExecutionResult } from '@/lib/types'
 import { DeepPartial } from 'ai'
 import { ChevronsRight, LoaderCircle } from 'lucide-react'
-import { Dispatch, SetStateAction } from 'react'
+import { Dispatch, SetStateAction, useEffect, useRef } from 'react'
 
 export function Preview({
   apiKey,
@@ -25,18 +25,21 @@ export function Preview({
   result,
   onClose,
   isCodeComplete,
+  showAssignment = false,
 }: {
   apiKey: string | undefined
-  selectedTab: 'code' | 'fragment'
-  onSelectedTabChange: Dispatch<SetStateAction<'code' | 'fragment'>>
+  selectedTab: 'code' | 'fragment' | 'assignment'
+  onSelectedTabChange: Dispatch<SetStateAction<'code' | 'fragment' | 'assignment'>>
   isChatLoading: boolean
   isPreviewLoading: boolean
   fragment?: DeepPartial<FragmentSchema>
   result?: ExecutionResult
   onClose: () => void
   isCodeComplete?: boolean
+  showAssignment?: boolean
 }) {
-  if (!fragment) {
+  // If no fragment and no assignment to show, return null
+  if (!fragment && !showAssignment) {
     return null
   }
 
@@ -47,7 +50,7 @@ export function Preview({
       <Tabs
         value={selectedTab}
         onValueChange={(value) =>
-          onSelectedTabChange(value as 'code' | 'fragment')
+          onSelectedTabChange(value as 'code' | 'fragment' | 'assignment')
         }
         className="h-full flex flex-col items-start justify-start"
       >
@@ -69,36 +72,46 @@ export function Preview({
           </TooltipProvider>
           <div className="flex justify-center">
             <TabsList className="px-1 py-0 border h-8">
+              {fragment && (
+                <TabsTrigger
+                  className="font-normal text-xs py-1 px-2 gap-1 flex items-center"
+                  value="code"
+                >
+                  {isChatLoading && !fragment.code && (
+                    <LoaderCircle
+                      strokeWidth={3}
+                      className="h-3 w-3 animate-spin"
+                    />
+                  )}
+                  Code
+                  {!isCodeComplete && fragment.code && (
+                    <LoaderCircle
+                      strokeWidth={3}
+                      className="h-3 w-3 ml-1 animate-spin"
+                    />
+                  )}
+                </TabsTrigger>
+              )}
+              {fragment && (
+                <TabsTrigger
+                  disabled={!result}
+                  className="font-normal text-xs py-1 px-2 gap-1 flex items-center"
+                  value="fragment"
+                >
+                  Preview
+                  {isPreviewLoading && (
+                    <LoaderCircle
+                      strokeWidth={3}
+                      className="h-3 w-3 animate-spin"
+                    />
+                  )}
+                </TabsTrigger>
+              )}
               <TabsTrigger
                 className="font-normal text-xs py-1 px-2 gap-1 flex items-center"
-                value="code"
+                value="assignment"
               >
-                {isChatLoading && !fragment.code && (
-                  <LoaderCircle
-                    strokeWidth={3}
-                    className="h-3 w-3 animate-spin"
-                  />
-                )}
-                Code
-                {!isCodeComplete && fragment.code && (
-                  <LoaderCircle
-                    strokeWidth={3}
-                    className="h-3 w-3 ml-1 animate-spin"
-                  />
-                )}
-              </TabsTrigger>
-              <TabsTrigger
-                disabled={!result}
-                className="font-normal text-xs py-1 px-2 gap-1 flex items-center"
-                value="fragment"
-              >
-                Preview
-                {isPreviewLoading && (
-                  <LoaderCircle
-                    strokeWidth={3}
-                    className="h-3 w-3 animate-spin"
-                  />
-                )}
+                Assignment
               </TabsTrigger>
             </TabsList>
           </div>
@@ -114,26 +127,38 @@ export function Preview({
             </div>
           )}
         </div>
-        {fragment && (
-          <div className="overflow-y-auto w-full h-full">
-            <TabsContent value="code" className="h-full">
-              {fragment.code && (
-                <FragmentCode
-                  files={[
-                    {
-                      name: fragment.file_path || 'index.js',
-                      content: fragment.code,
-                    },
-                  ]}
-                  isStreaming={!isCodeComplete}
-                />
-              )}
-            </TabsContent>
-            <TabsContent value="fragment" className="h-full">
-              {result && <FragmentPreview result={result as ExecutionResult} />}
-            </TabsContent>
-          </div>
-        )}
+        <div className="overflow-y-auto w-full h-full">
+          {fragment && (
+            <>
+              <TabsContent value="code" className="h-full">
+                {fragment.code && (
+                  <FragmentCode
+                    files={[
+                      {
+                        name: fragment.file_path || 'index.js',
+                        content: fragment.code,
+                      },
+                    ]}
+                    isStreaming={!isCodeComplete}
+                  />
+                )}
+              </TabsContent>
+              <TabsContent value="fragment" className="h-full">
+                {result && <FragmentPreview result={result as ExecutionResult} />}
+              </TabsContent>
+            </>
+          )}
+          <TabsContent value="assignment" className="h-full">
+            <div className="w-full h-full">
+              <iframe 
+                src="/assignments"
+                className="w-full h-full border-0"
+                title="Assignment"
+                sandbox="allow-same-origin allow-scripts allow-forms"
+              />
+            </div>
+          </TabsContent>
+        </div>
       </Tabs>
     </div>
   )

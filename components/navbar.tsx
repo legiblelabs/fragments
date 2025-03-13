@@ -49,14 +49,7 @@ export function NavBar({
       <div className="flex flex-1 items-center">
         <Link href="/" className="flex items-center gap-2" target="_blank">
           <Logo width={24} height={24} />
-          <h1 className="whitespace-pre">Fragments by </h1>
-        </Link>
-        <Link
-          href="https://e2b.dev"
-          className="underline decoration-[rgba(229,123,0,.3)] decoration-2 text-[#ff8800]"
-          target="_blank"
-        >
-          E2B
+          <h1 className="whitespace-pre">LearnWeb AI</h1>
         </Link>
       </div>
       <div className="flex items-center gap-1 md:gap-4">
