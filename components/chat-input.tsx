@@ -31,7 +31,7 @@ export function ChatInput({
   isErrored: boolean
   isLoading: boolean
   isRateLimited: boolean
-  stop: () => void
+  stop?: () => void
   input: string
   handleInputChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void
   handleSubmit: (e: React.FormEvent<HTMLFormElement>) => void
@@ -126,10 +126,13 @@ export function ChatInput({
 
   function onEnter(e: React.KeyboardEvent<HTMLFormElement>) {
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+      console.log('Enter key pressed')
       e.preventDefault()
       if (e.currentTarget.checkValidity()) {
+        console.log('Form is valid, submitting')
         handleSubmit(e)
       } else {
+        console.log('Form is invalid')
         e.currentTarget.reportValidity()
       }
     }
@@ -143,7 +146,10 @@ export function ChatInput({
 
   return (
     <form
-      onSubmit={handleSubmit}
+      onSubmit={(e) => {
+        console.log('Form submit event triggered')
+        handleSubmit(e)
+      }}
       onKeyDown={onEnter}
       className="mb-2 mt-auto flex flex-col bg-background"
       onDragEnter={isMultiModal ? handleDrag : undefined}
@@ -255,7 +261,7 @@ export function ChatInput({
                         className="rounded-xl h-10 w-10"
                         onClick={(e) => {
                           e.preventDefault()
-                          stop()
+                          stop?.() // Optional chaining to safely call stop if it exists
                         }}
                       >
                         <Square className="h-5 w-5" />

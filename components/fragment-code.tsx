@@ -12,8 +12,10 @@ import { useState } from 'react'
 
 export function FragmentCode({
   files,
+  isStreaming = false,
 }: {
   files: { name: string; content: string }[]
+  isStreaming?: boolean
 }) {
   const [currentFile, setCurrentFile] = useState(files[0].name)
   const currentFileContent = files.find(
@@ -82,10 +84,18 @@ export function FragmentCode({
         </div>
       </div>
       <div className="flex flex-col flex-1 overflow-x-auto">
-        <CodeView
-          code={currentFileContent || ''}
-          lang={currentFile.split('.').pop() || ''}
-        />
+        {isStreaming ? (
+          // Simple code display during streaming for better performance
+          <pre className="p-4 text-sm font-mono whitespace-pre-wrap">
+            <code>{currentFileContent || ''}</code>
+          </pre>
+        ) : (
+          // Use the CodeView component with syntax highlighting when streaming is complete
+          <CodeView
+            code={currentFileContent || ''}
+            lang={currentFile.split('.').pop() || ''}
+          />
+        )}
       </div>
     </div>
   )

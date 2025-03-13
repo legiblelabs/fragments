@@ -7,19 +7,18 @@ import { ChatPicker } from '@/components/chat-picker'
 import { ChatSettings } from '@/components/chat-settings'
 import { NavBar } from '@/components/navbar'
 import { Preview } from '@/components/preview'
-import { RepoBanner } from '@/components/repo-banner'
 import { AuthViewType, useAuth } from '@/lib/auth'
-import { Message, toAISDKMessages, toMessageImage } from '@/lib/messages'
-import { LLMModelConfig } from '@/lib/models'
+import { Message, MessageText, MessageCode, MessageImage, toAISDKMessages, toMessageImage } from '@/lib/messages'
+import { LLMModelConfig, LLMModel } from '@/lib/models'
 import modelsList from '@/lib/models.json'
 import { FragmentSchema, fragmentSchema as schema } from '@/lib/schema'
 import { supabase } from '@/lib/supabase'
-import templates, { TemplateId } from '@/lib/templates'
+import templates, { Templates, TemplateId } from '@/lib/templates'
 import { ExecutionResult } from '@/lib/types'
 import { DeepPartial } from 'ai'
-import { experimental_useObject as useObject } from 'ai/react'
+import { useSplitFragment } from '@/lib/hooks/useSplitFragment'
 import { usePostHog } from 'posthog-js/react'
-import { SetStateAction, useEffect, useState } from 'react'
+import { SetStateAction, useEffect, useState, useRef } from 'react'
 import { useLocalStorage } from 'usehooks-ts'
 
 export default function Home() {
@@ -35,6 +34,17 @@ export default function Home() {
     },
   )
 
+  const filteredModels = modelsList.models.filter((model) => {
+    if (process.env.NEXT_PUBLIC_HIDE_LOCAL_MODELS) {
+      return model.providerId !== 'ollama'
+    }
+    return true
+  })
+
+  const currentModel = filteredModels.find(
+    (model) => model.id === languageModel.model,
+  ) as LLMModel | undefined
+
   const posthog = usePostHog()
 
   const [result, setResult] = useState<ExecutionResult>()
@@ -46,115 +56,160 @@ export default function Home() {
   const [authView, setAuthView] = useState<AuthViewType>('sign_in')
   const [isRateLimited, setIsRateLimited] = useState(false)
   const { session, apiKey } = useAuth(setAuthDialog, setAuthView)
+  console.log('Current session:', session)
 
-  const filteredModels = modelsList.models.filter((model) => {
-    if (process.env.NEXT_PUBLIC_HIDE_LOCAL_MODELS) {
-      return model.providerId !== 'ollama'
-    }
-    return true
-  })
-
-  const currentModel = filteredModels.find(
-    (model) => model.id === languageModel.model,
-  )
   const currentTemplate =
     selectedTemplate === 'auto'
       ? templates
       : { [selectedTemplate]: templates[selectedTemplate] }
   const lastMessage = messages[messages.length - 1]
+  
+  // Track when the code generation is complete to create the sandbox
+  const isCodeComplete = useRef(false)
 
-  const { object, submit, isLoading, stop, error } = useObject({
-    api: '/api/chat',
-    schema,
-    onError: (error) => {
-      if (error.message.includes('request limit')) {
-        setIsRateLimited(true)
+  const { metadata, code, submit, isLoadingMetadata, isLoadingCode, error } = useSplitFragment()
+  const isLoading = isLoadingMetadata || isLoadingCode
+
+  useEffect(() => {
+    if (error?.message?.includes('request limit')) {
+      setIsRateLimited(true)
+    }
+  }, [error])
+
+  useEffect(() => {
+    if (metadata) {
+      console.log('metadata', metadata)
+      posthog.capture('fragment_metadata_generated', {
+        template: metadata.template,
+      })
+
+      // Update UI with metadata immediately
+      const content: MessageText[] = [
+        { type: 'text', text: metadata.commentary || '' }
+      ]
+
+      const message: Message = {
+        role: 'assistant',
+        content,
+        object: { ...metadata }
       }
-    },
-    onFinish: async ({ object: fragment, error }) => {
-      if (!error) {
-        // send it to /api/sandbox
-        console.log('fragment', fragment)
-        setIsPreviewLoading(true)
-        posthog.capture('fragment_generated', {
-          template: fragment?.template,
-        })
 
-        const response = await fetch('/api/sandbox', {
-          method: 'POST',
-          body: JSON.stringify({
-            fragment,
-            userID: session?.user?.id,
-            apiKey,
-          }),
-        })
+      if (!lastMessage || lastMessage.role !== 'assistant') {
+        addMessage(message)
+      } else {
+        setMessage(message, messages.length - 1)
+      }
 
-        const result = await response.json()
-        console.log('result', result)
+      // Reset the code complete flag when new metadata is received
+      isCodeComplete.current = false
+    }
+  }, [metadata])
+
+  // This effect updates the UI with streaming code as it arrives
+  useEffect(() => {
+    if (!metadata || !code) return
+
+    // Only show code in the UI if we have some actual content
+    if (code.trim().length > 0) {
+      // Create partial fragment for display
+      const partialFragment = { ...metadata, code }
+      
+      // Update current message with the latest code
+      const content: (MessageText | MessageCode)[] = [
+        { type: 'text', text: metadata?.commentary || '' },
+        { type: 'code', text: code }
+      ]
+
+      const message: Message = {
+        role: 'assistant',
+        content,
+        object: partialFragment
+      }
+      
+      // Update message with current code
+      setMessage(message, messages.length - 1)
+      
+      // Update fragment for preview
+      setFragment(partialFragment)
+
+      // Switch to code tab to show streaming code
+      if (currentTab !== 'code' && isLoadingCode) {
+        setCurrentTab('code')
+      }
+    }
+  }, [code, metadata, isLoadingCode])
+
+  // This effect runs when code generation is complete
+  useEffect(() => {
+    // Only proceed if we have metadata, code, and we're no longer loading code
+    if (metadata && code && !isLoadingCode && !isCodeComplete.current) {
+      console.log('Code generation completed, creating sandbox...')
+      isCodeComplete.current = true
+      
+      // Create complete fragment
+      const completeFragment = { ...metadata, code }
+      
+      setIsPreviewLoading(true)
+      
+      // Send to sandbox
+      fetch('/api/sandbox', {
+        method: 'POST',
+        body: JSON.stringify({
+          fragment: completeFragment,
+          userID: session?.user?.id,
+          apiKey,
+        }),
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`Sandbox API error: ${response.status}`)
+        }
+        return response.json()
+      })
+      .then(result => {
+        console.log('Sandbox created:', result)
         posthog.capture('sandbox_created', { url: result.url })
 
         setResult(result)
-        setCurrentPreview({ fragment, result })
-        setMessage({ result })
+        
+        // Update message with sandbox result
+        const updatedMessage = { ...lastMessage, result }
+        setMessage(updatedMessage, messages.length - 1)
+        
+        // Automatically switch to fragment preview when sandbox is ready
         setCurrentTab('fragment')
+      })
+      .catch(error => {
+        console.error('Sandbox creation failed:', error)
+      })
+      .finally(() => {
         setIsPreviewLoading(false)
-      }
-    },
-  })
-
-  useEffect(() => {
-    if (object) {
-      setFragment(object)
-      const content: Message['content'] = [
-        { type: 'text', text: object.commentary || '' },
-        { type: 'code', text: object.code || '' },
-      ]
-
-      if (!lastMessage || lastMessage.role !== 'assistant') {
-        addMessage({
-          role: 'assistant',
-          content,
-          object,
-        })
-      }
-
-      if (lastMessage && lastMessage.role === 'assistant') {
-        setMessage({
-          content,
-          object,
-        })
-      }
+      })
     }
-  }, [object])
+  }, [code, metadata, isLoadingCode])
 
   useEffect(() => {
-    if (error) stop()
+    if (error) return
   }, [error])
 
-  function setMessage(message: Partial<Message>, index?: number) {
+  function setMessage(message: Message, index?: number) {
     setMessages((previousMessages) => {
       const updatedMessages = [...previousMessages]
-      updatedMessages[index ?? previousMessages.length - 1] = {
-        ...previousMessages[index ?? previousMessages.length - 1],
-        ...message,
-      }
-
+      updatedMessages[index ?? previousMessages.length - 1] = message
       return updatedMessages
     })
   }
 
   async function handleSubmitAuth(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
+    console.log('Form submitted')
 
-    if (!session) {
-      return setAuthDialog(true)
+    if (isLoadingMetadata || isLoadingCode) {
+      console.log('Already loading, skipping')
+      return
     }
 
-    if (isLoading) {
-      stop()
-    }
-
-    const content: Message['content'] = [{ type: 'text', text: chatInput }]
+    const content: (MessageText | MessageImage)[] = [{ type: 'text', text: chatInput }]
     const images = await toMessageImage(files)
 
     if (images.length > 0) {
@@ -163,16 +218,29 @@ export default function Home() {
       })
     }
 
-    const updatedMessages = addMessage({
+    const message: Message = {
       role: 'user',
       content,
-    })
+    }
 
-    submit({
-      userID: session?.user?.id,
+    const updatedMessages = addMessage(message)
+
+    console.log('Submitting with params:', {
+      userID: 'dev-user',
       messages: toAISDKMessages(updatedMessages),
       template: currentTemplate,
       model: currentModel,
+      config: languageModel,
+    })
+    
+    // Reset code completion flag
+    isCodeComplete.current = false
+    
+    submit({
+      userID: session?.user?.id || 'dev-user',
+      messages: toAISDKMessages(updatedMessages),
+      template: currentTemplate as Templates,
+      model: currentModel!,
       config: languageModel,
     })
 
@@ -187,13 +255,18 @@ export default function Home() {
   }
 
   function retry() {
-    submit({
-      userID: session?.user?.id,
-      messages: toAISDKMessages(messages),
-      template: currentTemplate,
-      model: currentModel,
-      config: languageModel,
-    })
+    if (session?.user?.id) {
+      // Reset code completion flag
+      isCodeComplete.current = false
+      
+      submit({
+        userID: session.user.id,
+        messages: toAISDKMessages(messages),
+        template: currentTemplate as Templates,
+        model: currentModel!,
+        config: languageModel,
+      })
+    }
   }
 
   function addMessage(message: Message) {
@@ -240,6 +313,7 @@ export default function Home() {
     setResult(undefined)
     setCurrentTab('code')
     setIsPreviewLoading(false)
+    isCodeComplete.current = false
   }
 
   function setCurrentPreview(preview: {
@@ -253,6 +327,7 @@ export default function Home() {
   function handleUndo() {
     setMessages((previousMessages) => [...previousMessages.slice(0, -2)])
     setCurrentPreview({ fragment: undefined, result: undefined })
+    isCodeComplete.current = false
   }
 
   return (
@@ -289,7 +364,6 @@ export default function Home() {
             isErrored={error !== undefined}
             isLoading={isLoading}
             isRateLimited={isRateLimited}
-            stop={stop}
             input={chatInput}
             handleInputChange={handleSaveInputChange}
             handleSubmit={handleSubmitAuth}
@@ -322,6 +396,7 @@ export default function Home() {
           fragment={fragment}
           result={result as ExecutionResult}
           onClose={() => setFragment(undefined)}
+          isCodeComplete={!isLoadingCode && !!code}
         />
       </div>
     </main>

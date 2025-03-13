@@ -3,10 +3,9 @@ import { getModelClient, getDefaultMode } from '@/lib/models'
 import { LLMModel, LLMModelConfig } from '@/lib/models'
 import { toPrompt } from '@/lib/prompt'
 import ratelimit from '@/lib/ratelimit'
-import { fragmentSchema as schema } from '@/lib/schema'
+import { fragmentMetadataSchema } from '@/lib/fragmentMetadataSchema'
 import { Templates } from '@/lib/templates'
 import { streamObject, LanguageModel, CoreMessage } from 'ai'
-import { Message } from '@/lib/messages'
 import { NextRequest } from 'next/server'
 
 export const maxDuration = 60
@@ -18,15 +17,16 @@ const ratelimitWindow = process.env.RATE_LIMIT_WINDOW
   ? (process.env.RATE_LIMIT_WINDOW as Duration)
   : '1d'
 
-// Change Request to NextRequest
 export async function POST(req: NextRequest) {
-  console.log('POST /api/chat route hit')
+  console.log('POST /api/chat/metadata route hit')
   console.log('Parsing request body...')
   
-  // Use the NextRequest clone() method to create a copy before reading
-  const reqCopy = req.clone();
-  
   try {
+    // Read the request body ONCE and store it in requestBody
+    const requestBody = await req.json()
+    console.log('Request body parsed')
+    
+    // Destructure values from the already parsed requestBody
     const {
       messages,
       userID,
@@ -34,13 +34,14 @@ export async function POST(req: NextRequest) {
       model,
       config,
     }: {
-      messages: Message[]
+      messages: CoreMessage[]
       userID: string
       template: Templates
       model: LLMModel
       config: LLMModelConfig
-    } = await reqCopy.json()
-    console.log('Request body parsed:', { messages, userID, template, model, config })
+    } = requestBody
+    
+    console.log('Request data processed:', { userID, template, model })
 
     const limit = !config.apiKey
       ? await ratelimit(
@@ -61,31 +62,35 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    console.log('userID', userID)
-    // console.log('template', template)
-    console.log('model', model)
-    // console.log('config', config)
-
     const { model: modelNameString, apiKey: modelApiKey, ...modelParams } = config
     const modelClient = getModelClient(model, config)
 
-    const stream = await streamObject({
+    console.log('Starting metadata stream...')
+    console.log('Creating metadata stream with model:', model)
+
+    const metadataStream = await streamObject({
       model: modelClient as LanguageModel,
-      schema,
+      schema: fragmentMetadataSchema,
       system: toPrompt(template),
-      messages: messages as CoreMessage[],
+      messages,
       mode: getDefaultMode(model),
       ...modelParams,
     })
 
-    return stream.toTextStreamResponse()
+    return metadataStream.toTextStreamResponse()
   } catch (error) {
-    console.error('Error processing request:', error)
-    return new Response(JSON.stringify({ error: 'Failed to process request' }), {
-      status: 500,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    })
+    console.error('Error processing metadata request:', error)
+    return new Response(
+      JSON.stringify({ 
+        error: 'Failed to process metadata request', 
+        details: error instanceof Error ? error.message : String(error) 
+      }),
+      {
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    )
   }
 }

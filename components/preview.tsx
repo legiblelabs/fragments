@@ -24,6 +24,7 @@ export function Preview({
   fragment,
   result,
   onClose,
+  isCodeComplete,
 }: {
   apiKey: string | undefined
   selectedTab: 'code' | 'fragment'
@@ -33,6 +34,7 @@ export function Preview({
   fragment?: DeepPartial<FragmentSchema>
   result?: ExecutionResult
   onClose: () => void
+  isCodeComplete?: boolean
 }) {
   if (!fragment) {
     return null
@@ -71,13 +73,19 @@ export function Preview({
                 className="font-normal text-xs py-1 px-2 gap-1 flex items-center"
                 value="code"
               >
-                {isChatLoading && (
+                {isChatLoading && !fragment.code && (
                   <LoaderCircle
                     strokeWidth={3}
                     className="h-3 w-3 animate-spin"
                   />
                 )}
                 Code
+                {!isCodeComplete && fragment.code && (
+                  <LoaderCircle
+                    strokeWidth={3}
+                    className="h-3 w-3 ml-1 animate-spin"
+                  />
+                )}
               </TabsTrigger>
               <TabsTrigger
                 disabled={!result}
@@ -94,7 +102,7 @@ export function Preview({
               </TabsTrigger>
             </TabsList>
           </div>
-          {result && (
+          {result && isCodeComplete && (
             <div className="flex items-center justify-end gap-2">
               {isLinkAvailable && (
                 <DeployDialog
@@ -109,14 +117,15 @@ export function Preview({
         {fragment && (
           <div className="overflow-y-auto w-full h-full">
             <TabsContent value="code" className="h-full">
-              {fragment.code && fragment.file_path && (
+              {fragment.code && (
                 <FragmentCode
                   files={[
                     {
-                      name: fragment.file_path,
+                      name: fragment.file_path || 'index.js',
                       content: fragment.code,
                     },
                   ]}
+                  isStreaming={!isCodeComplete}
                 />
               )}
             </TabsContent>

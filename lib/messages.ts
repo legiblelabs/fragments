@@ -1,6 +1,7 @@
 import { FragmentSchema } from './schema'
 import { ExecutionResult } from './types'
 import { DeepPartial } from 'ai'
+import { CoreMessage, CoreUserMessage, CoreAssistantMessage } from 'ai'
 
 export type MessageText = {
   type: 'text'
@@ -18,26 +19,20 @@ export type MessageImage = {
 }
 
 export type Message = {
-  role: 'assistant' | 'user'
+  role: 'user' | 'assistant'
   content: Array<MessageText | MessageCode | MessageImage>
   object?: DeepPartial<FragmentSchema>
   result?: ExecutionResult
 }
 
-export function toAISDKMessages(messages: Message[]) {
-  return messages.map((message) => ({
+export function toAISDKMessages(messages: Message[]): CoreMessage[] {
+  return messages.map(message => ({
     role: message.role,
-    content: message.content.map((content) => {
-      if (content.type === 'code') {
-        return {
-          type: 'text',
-          text: content.text,
-        }
-      }
-
-      return content
-    }),
-  }))
+    content: message.content.map(c => {
+      if (c.type === 'text' || c.type === 'code') return c.text
+      return c.image
+    }).join('\n')
+  })) as CoreMessage[]
 }
 
 export async function toMessageImage(files: File[]) {
